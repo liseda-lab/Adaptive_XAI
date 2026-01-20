@@ -3,13 +3,6 @@
 **Agentic Personas for Adaptive Scientific Explanations with Knowledge Graphs**  
 - Resources for the anonymous submission for IJCAI-ECAI 2026 (#2600) are available here.
 
-
----
-## Credits
-The adaptive approach in this repository builds on the **REx** framework, originally released in the repository [REx](https://github.com/liseda-lab/REx), which accompanied the paper: *Rewarding Explainability in Drug Repurposing with Knowledge Graphs* (Nunes et al., 2025).  
-
----
-
 ## Overview
 This repository accompanies our submission, which presents **adaptive explainability**: an approach to designing AI explanations that adapt to experts’ epistemic stances.
 
@@ -148,4 +141,6 @@ cat graph_part*.txt > graph.txt
 For any comments or help needed, please send an email to: to be added.
 
 ## Acknowledgments
-To be added.
+We build on [REx](https://github.com/liseda-lab/REx) for the reinforcement learning path discovery.  
+
+---
