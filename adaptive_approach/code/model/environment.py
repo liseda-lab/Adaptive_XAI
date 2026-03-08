@@ -189,7 +189,7 @@ class Episode(object):
         str : Human-readable multi-line string with query context and paths
         """
         
-        # Try to load reverse vocabularies from the grapher (map IDs -> labels)
+        # Try to load reverse vocabularies from the grapher (map IDs -> vocab strings)
         rev_e = getattr(self.grapher, "rev_entity_vocab", None)
         rev_r = getattr(self.grapher, "rev_relation_vocab", None)
 
@@ -198,13 +198,18 @@ class Episode(object):
                 if self.relation_history
                 else np.zeros((0, self.visited_entities.shape[0]), dtype=np.float32))
 
-        # Helper to map entity ID to name if vocab exists, else str(ID)
+        #NEW CODE - Helper to map entity numeric ID -> human-readable label
+        # Flow: numeric ID -> rev_vocab -> vocab string (e.g. "Gene::134391") -> label (e.g. "SERPINC1")
         def name_e(eid):
-            return rev_e.get(int(eid), str(int(eid))) if rev_e else str(int(eid))
+            vocab_str = rev_e.get(int(eid), str(int(eid))) if rev_e else str(int(eid))
+            return self.grapher.get_entity_label(vocab_str)
 
-        # Helper to map relation ID to name if vocab exists, else str(ID)
+        # Helper to map relation numeric ID -> human-readable label
+        # Flow: numeric ID -> rev_vocab -> vocab string (e.g. "CtD") -> label (e.g. "treats")
         def name_r(rid):
-            return rev_r.get(int(rid), str(int(rid))) if rev_r else str(int(rid))
+            vocab_str = rev_r.get(int(rid), str(int(rid))) if rev_r else str(int(rid))
+            return self.grapher.get_relation_label(vocab_str)
+        #END NEW CODE
 
         B = self.visited_entities.shape[0]  # Number of rollouts in the batch
 
@@ -903,7 +908,8 @@ class env(object):
                                              max_num_actions=params['max_num_actions'],
                                              entity_vocab=params['entity_vocab'],
                                              relation_vocab=params['relation_vocab'],
-                                             edges_weight=params['edges_weight']
+                                             edges_weight=params['edges_weight'],
+                                             labels_dir=params['data_input_dir'] #NEW CODE - pass dataset dir for label loading
                                              )
 
     def get_episodes(self):
