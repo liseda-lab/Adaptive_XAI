@@ -1,10 +1,9 @@
 # Adaptive-XAI
 
 **Agentic Personas for Adaptive Scientific Explanations with Knowledge Graphs**  
-- Resources for the anonymous submission for IJCAI-ECAI 2026 (#2600) are available here.
 
 ## Overview
-This repository accompanies our submission, which presents **adaptive explainability**: an approach to designing AI explanations that adapt to experts’ epistemic stances.
+This repository accompanies our paper, which presents **adaptive explainability**: an approach to designing AI explanations that adapt to experts’ epistemic stances. A more recent implementation in Pytorch is available [here](https://github.com/liseda-lab/REx_PyTorch). 
 
 Most explainable AI (XAI) systems assume a generic user model, overlooking that explanation needs vary by background, task, and interpretive strategy. Our work presents:  
 
