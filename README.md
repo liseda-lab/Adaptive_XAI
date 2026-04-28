@@ -2,6 +2,8 @@
 
 **Agentic Personas for Adaptive Scientific Explanations with Knowledge Graphs**  
 
+- *UPDATE*: A PyTorch implementation is available [here](https://github.com/liseda-lab/REx_PyTorch). It is a more efficient implementation of the approach described in the paper, with some improvements including a final output file with only correct paths and associated lowest common ancestors. The original implementation is still available in this repo for reproducibility purposes.
+
 ## Overview
 This repository accompanies our paper, which presents **adaptive explainability**: an approach to designing AI explanations that adapt to experts’ epistemic stances. A more recent implementation in Pytorch is available [here](https://github.com/liseda-lab/REx_PyTorch). 
 
