@@ -612,8 +612,10 @@ class Trainer(object):
                     state['current_entities'])
 
             # Process final rewards from environment
-           # rewards = episode.get_reward_weights_sigmoid()  
-            rewards = episode.get_reward_agenticAI() # -- NEW 
+            if print_paths:
+                rewards = episode.get_reward_agenticAI()
+            else:
+                rewards = episode.get_reward_ic_based()
             #print(rewards)
             reward_reshape = rewards.reshape((temp_batch_size, self.test_rollouts))
             # reshape and sort on the *frozen* full‐log_probs
