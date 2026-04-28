@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger()
 
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -18,13 +18,13 @@ import tensorflow as tf
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 
-#-----NEW 
-import json 
+#-----NEW
+import json
 from dotenv import load_dotenv
 load_dotenv()  # ADD THIS
 # Optional OpenAI client (kept safe if lib/key are missing)
 try:
-    from openai import OpenAI  
+    from openai import OpenAI
     _agentic_client = OpenAI()  # uses OPENAI_API_KEY env var
 except Exception as _e:
     _agentic_client = None
@@ -58,11 +58,10 @@ def configure_env_logger(path):
 COMPLETENESS_MAP = {1: 1.0, 2: 3.0, 3: 5.0, 4: 3.0, 5: 1.0}
 
 def threshold_for_step(step: int) -> float:
-    if step < 60:   return 0.50
-    elif step < 80: return 0.55
-    elif step < 120:return 0.60
-    elif step < 150:return 0.65
-    else:           return 0.70
+    if step < 60:    return 0.65
+    elif step < 80:  return 0.70
+    elif step < 100: return 0.75
+    else:            return 0.80
 
 
 class Episode(object):
@@ -81,7 +80,7 @@ class Episode(object):
         else:
             self.num_rollouts = test_rollouts
         self.current_hop = 0
-        start_entities, query_relation,  end_entities, all_answers, batch_weights = data 
+        start_entities, query_relation,  end_entities, all_answers, batch_weights = data
         self.no_examples = start_entities.shape[0]
         self.batch_weights = batch_weights
         self.positive_reward = positive_reward
@@ -100,7 +99,7 @@ class Episode(object):
         self.query_relation = batch_query_relation
         self.all_answers = all_answers
 
-        # Load persona text (empty string if file missing) #  -- NEW 
+        # Load persona text (empty string if file missing) #  -- NEW
         self.agentic_ai_enabled = bool(agentic_ai_enabled)
         self.persona_path = persona_path
         self.persona_text = ""
@@ -126,15 +125,15 @@ class Episode(object):
         next_actions, next_weights = self.grapher.return_next_actions(self.current_entities, self.start_entities, self.query_relation,
                                                         self.end_entities, self.all_answers, self.current_hop == self.path_len - 1,
                                                         self.num_rollouts, self.visited_entities, self.prevent_cycles)
-        
+
         self.relation_history = []  # NEW - track chosen relations at each step
-    
+
         self.state = {}
         self.state['next_relations'] = next_actions[:, :, 1] # Relations
         self.state['next_entities'] = next_actions[:, :, 0] # Target Entities
         self.state['current_entities'] = self.current_entities # Current Entities
         self.state['weights'] = next_weights # EDGE WEIGHTS
-        self.state['visited_entities'] = self.visited_entities 
+        self.state['visited_entities'] = self.visited_entities
 
     def get_state(self):
         return self.state
@@ -174,7 +173,7 @@ class Episode(object):
 
     #-- helper that will turn relation_history + visited_entities into a human-readable path string for each rollout, ready to send into get_reward_agenticAI() for persona scoring.
     def _build_paths_text(self, keep_idxs=None):
-        
+
         """
         Build a readable string representation of one or more rollouts (paths).
 
@@ -188,7 +187,7 @@ class Episode(object):
         -------
         str : Human-readable multi-line string with query context and paths
         """
-        
+
         # Try to load reverse vocabularies from the grapher (map IDs -> vocab strings)
         rev_e = getattr(self.grapher, "rev_entity_vocab", None)
         rev_r = getattr(self.grapher, "rev_relation_vocab", None)
@@ -217,22 +216,22 @@ class Episode(object):
         idxs = range(B) if keep_idxs is None else keep_idxs
 
         lines = []
-        
+
         # Add query context at the beginning
         # Get the query relation name (same for all rollouts in this batch)
         if len(idxs) > 0:
             first_idx = idxs[0]
             query_rel_id = self.query_relation[first_idx]
             query_rel_name = name_r(query_rel_id)
-            
+
             # Get start and end entity names for context
             start_ent_name = name_e(self.start_entities[first_idx])
             end_ent_name = name_e(self.end_entities[first_idx])
-            
+
             # Add query header
             lines.append(f"Query: Explaining why {start_ent_name} --[{query_rel_name}]--> {end_ent_name}")
             lines.append(f"Finding paths that explain the '{query_rel_name}' relationship.\n")
-        
+
         # Build each path
         for out_i, b in enumerate(idxs, 1):
             # Start the path string with the starting entity
@@ -259,135 +258,6 @@ class Episode(object):
         # Join all path lines into one string separated by newlines
         return "\n".join(lines)
 
-    # def get_scores_AgenticAI_OG(self, keep_idxs):
-    #     """
-    #     Sync micro-batching: score ALL eligible paths by splitting into batches,
-    #     sleeping briefly between requests, and retrying on failures.
-    #     Returns a list of dicts (len == len(keep_idxs)) in the same order.
-    #     """
-    #     if not self.agentic_ai_enabled or _agentic_client is None:
-    #         return None
-    #     if not keep_idxs:
-    #         return None
-
-    #     # ---- knobs (tune without code changes) ----
-    #     BATCH_SIZE = int(os.getenv("AGENTIC_BATCH_SIZE", "20"))       # 20–40 recommended
-    #     SLEEP_BETWEEN = float(os.getenv("AGENTIC_SLEEP_BETWEEN", "0.4"))  # 0.3–0.5s
-    #     MAX_RETRIES = int(os.getenv("AGENTIC_MAX_RETRIES", "4"))
-    #     # ------------------------------------------
-
-    #     import time, random, json
-    #     def _score_batch(batch_idxs, start_num):
-    #         """One sync call with small retries + robust JSON extraction."""
-    #         paths_text = self._build_paths_text(keep_idxs=batch_idxs)
-
-    #         # # Debug: Check if paths_text looks correct
-    #         # path_lines = [line for line in paths_text.split('\n') if line.startswith('Path ')]
-    #         # print(f"[DEBUG] Generated text has {len(path_lines)} path lines for {len(batch_idxs)} indices")
-            
-
-    #         prompt = f"""
-    #         You are evaluating drug–disease explanation paths from the perspective of the following persona:
-
-    #         {self.persona_text}
-
-    #         Score EACH path individually on three criteria:
-    #         1. Scientific Validity (V): 1–5. Scientific correctness, plausibility, and coherence based on biomedical knowledge.
-    #         2. Completeness (C): 1–5 where 3 is ideal. 1 = too simple, 5 = too complex. Reward paths that are sufficiently detailed without overload.
-    #         3. Relevance (R): 1–5. Usefulness for understanding why the prediction matters and how it connects to the task.
-
-    #         Paths to evaluate ({len(batch_idxs)} paths total):
-    #             {paths_text}
-
-    #         Return a JSON array with {len(batch_idxs)} objects (one per path above):
-    #         [{{"validity": 4, "completeness": 3, "relevance": 5}}, ...]
-
-    #         IMPORTANT: Your array must have EXACTLY {len(batch_idxs)} scores. DOUBLE CHECK BEFORE RETURNING RESULTS. 
-    #         """.strip()
-
-    #         last_err = None
-    #         for attempt in range(1, MAX_RETRIES + 1):
-    #             try:
-    #                 resp = _agentic_client.chat.completions.create(
-    #                     model="gpt-4o-mini",
-    #                     messages=[{"role": "user", "content": prompt}],
-    #                     temperature=0,
-    #                 )
-    #                 raw = resp.choices[0].message.content.strip()
-
-    #                 # tolerate fenced code blocks
-    #                 if "```" in raw:
-    #                     parts = raw.split("```")
-    #                     raw = "".join(p for p in parts if "[" in p and "]" in p)
-    #                 # extract JSON slice
-    #                 a, b = raw.find("["), raw.rfind("]")
-    #                 if a != -1 and b != -1 and b > a:
-    #                     raw = raw[a:b+1]
-
-    #                 data = json.loads(raw)
-    #                 if not isinstance(data, list):
-    #                     raise ValueError("response is not a list")
-
-    #                 # normalize and clamp
-    #                 out = []
-    #                 for item in data:
-    #                     def _num(k, d=3.0):
-    #                         try: return float(item.get(k, d))
-    #                         except: return d
-    #                     out.append({
-    #                         "validity": max(1.0, min(5.0, _num("validity"))),
-    #                         "completeness": max(1.0, min(5.0, _num("completeness"))),
-    #                         "relevance": max(1.0, min(5.0, _num("relevance"))),
-    #                     })
-
-    #                 # Handle length mismatch gracefully
-    #                 if len(out) != len(batch_idxs):
-    #                     print(f"[WARN] Expected {len(batch_idxs)} scores, got {len(out)}")
-
-    #                     # # Log the raw response for debugging
-    #                     # if len(raw) < 2000:  # Only if not too long
-    #                     #     print(f"[DEBUG] Raw response: {raw[:500]}...")
-                        
-    #                     # # Check if the LLM numbered the scores
-    #                     # if out and isinstance(out[0], dict) and any('path' in str(k).lower() for k in out[0].keys()):
-    #                     #     print("[DEBUG] LLM may have added path numbers/labels")
-                        
-    #                     # Pad with defaults if too few
-    #                     while len(out) < len(batch_idxs):
-    #                         print(f"  Adding default score for missing path {len(out)+1}")
-    #                         out.append({"validity": 3.0, "completeness": 2.0, "relevance": 3.0})
-                        
-    #                     # Trim if too many
-    #                     if len(out) > len(batch_idxs):
-    #                         print(f"  Trimming extra scores")
-    #                         out = out[:len(batch_idxs)]
-                    
-    #                 return out  # Return the padded/trimmed scores
-                    
-    #             except Exception as e:
-    #                 last_err = e
-    #                 if attempt < MAX_RETRIES:
-    #                     delay = SLEEP_BETWEEN * (1.25 ** (attempt - 1)) + random.uniform(0, 0.2)
-    #                     time.sleep(delay)
-            
-    #         # Only reached if all retries failed
-    #         print(f"[FAIL] Batch completely failed after {MAX_RETRIES} attempts: {last_err}")
-    #         return [{"validity": 2.5, "completeness": 3.0, "relevance": 2.5}
-    #                 for _ in batch_idxs]
-        
-    #     # ---- NOW the main loop to process all batches ----
-    #     results = []
-    #     start_num = 1
-    #     for i in range(0, len(keep_idxs), BATCH_SIZE):
-    #         batch_idxs = keep_idxs[i:i + BATCH_SIZE]
-    #         batch_scores = _score_batch(batch_idxs, start_num=start_num)
-    #         results.extend(batch_scores)
-    #         start_num += len(batch_idxs)
-    #         if i + BATCH_SIZE < len(keep_idxs):  # Don't sleep after last batch
-    #             time.sleep(SLEEP_BETWEEN)
-
-    #     return results
-    
     def get_scores_AgenticAI(self, keep_idxs):
         """
         Sync micro-batching: score ALL eligible paths by splitting into batches,
@@ -409,9 +279,6 @@ class Episode(object):
             """One sync call with small retries + robust JSON extraction."""
             paths_text = self._build_paths_text(keep_idxs=batch_idxs)
 
-            # # Debug: Check if paths_text looks correct
-            # path_lines = [line for line in paths_text.split('\n') if line.startswith('Path ')]
-            # print(f"[DEBUG] Generated text has {len(path_lines)} path lines for {len(batch_idxs)} indices")
             n_lines = sum(1 for line in paths_text.splitlines() if line.startswith("Path "))
             if n_lines != len(batch_idxs):
                 print(f"[WARN] Prompt contains {n_lines} Path-lines but batch size is {len(batch_idxs)}")
@@ -433,7 +300,7 @@ class Episode(object):
 
             Return ONLY valid JSON with an array of exactly {len(batch_idxs)} objects.
             Each object MUST be: {{"id": <int from {id_list}>, "validity": <int>, "completeness": <int>, "relevance": <int>}}.
-            Use ONLY the ids from this set: {id_list}. Do not invent or omit ids. DOUBLE CHECK BEFORE RETURNING RESULTS. 
+            Use ONLY the ids from this set: {id_list}. Do not invent or omit ids. DOUBLE CHECK BEFORE RETURNING RESULTS.
             """.strip()
 
 
@@ -475,7 +342,7 @@ class Episode(object):
                     allowed = set(id_list)
                     by_id = {}
                     for item in data:
-                        if not isinstance(item, dict) or "id" not in item: 
+                        if not isinstance(item, dict) or "id" not in item:
                             continue
                         try: pid = int(item["id"])
                         except: continue
@@ -499,18 +366,18 @@ class Episode(object):
                         print(f"[WARN] ID-mismatch: expected {len(id_list)}, got {len(by_id)}, "
                             f"filled defaults for {missing} ids")
                     return out
-                    
+
                 except Exception as e:
                     last_err = e
                     if attempt < MAX_RETRIES:
                         delay = SLEEP_BETWEEN * (1.25 ** (attempt - 1)) + random.uniform(0, 0.2)
                         time.sleep(delay)
-            
+
             # Only reached if all retries failed
             print(f"[FAIL] Batch completely failed after {MAX_RETRIES} attempts: {last_err}")
             return [{"validity": 3.0, "completeness": 2.0, "relevance": 3.0}
                     for _ in batch_idxs]
-        
+
         # ---- group by example id so each prompt has a single (start,end) context ----
         groups = defaultdict(list)
         nr = int(self.num_rollouts)
@@ -526,10 +393,10 @@ class Episode(object):
                     time.sleep(SLEEP_BETWEEN)
 
         return results
-    
+
     def get_reward_agenticAI(self, wV=1/3, wC=1/3, wR=1/3):
         training_step = getattr(Episode, '_training_step', 0)
-        
+
         base = self.get_reward_weights_sigmoid()
         self._cache_ic_summaries()
         B = base.shape[0]
@@ -543,44 +410,20 @@ class Episode(object):
             return base
         # <
 
-        # if training_step < 50:
-        #     # Just return the IC-based rewards directly
-        #     return base  # Simple and effective
-        # PHASE 2: Persona-based refinement
-        # Now we have a model that knows how to find paths
-        # Time to shape those paths according to persona preferences
-
-        # # Progressive threshold
-        # if training_step < 60:
-        #     threshold = 0.5
-        # elif training_step < 80:
-        #     threshold = 0.55
-        # elif training_step < 120:
-        #     threshold = 0.6
-        # elif training_step < 150:
-        #     threshold = 0.65
-        # else:
-        #     threshold = 0.7
-        
         threshold = threshold_for_step(training_step)
-        
-        # Three tiers of paths
-        high_ic_idxs = np.where(base > threshold)[0].tolist()
-        medium_ic_idxs = np.where((base > 0.5) & (base <= threshold))[0].tolist() if threshold > 0.5 else []
-        low_ic_idxs = np.where((base > 0.3) & (base <= 0.5))[0].tolist()  # NEW tier
-        
 
-        #Log distribution
-        # print(f"[STEP {training_step}] Threshold={threshold:.2f}")
-        # print(f"  High IC (>{threshold:.2f}): {len(high_ic_idxs)} paths for LLM")
-        # print(f"  Medium IC (0.5-{threshold:.2f}): {len(medium_ic_idxs)} paths get 0.25")
-        # print(f"  Low IC (0.3-0.5): {len(low_ic_idxs)} paths get 0.1")
-        
+        # Three tiers of paths, gated by fidelity.
+        # Fidelity gate: base > 0 means the path reached the answer entity.
+        # Fidelity=0 paths (base <= 0) get NO reward.
+        high_ic_idxs = np.where(base > threshold)[0].tolist()
+        medium_ic_idxs = np.where((base >= 0.5) & (base <= threshold))[0].tolist() if threshold >= 0.5 else []
+        low_ic_idxs = np.where((base > 0) & (base < 0.5))[0].tolist()
+
         lines = [
             f"[STEP {training_step}] Threshold={threshold:.2f}",
             f"  High IC (>{threshold:.2f}): {len(high_ic_idxs)} paths for LLM",
-            f"  Medium IC (0.5-{threshold:.2f}): {len(medium_ic_idxs)} paths get 0.25",
-            f"  Low IC (0.3-0.5): {len(low_ic_idxs)} paths get 0.1",
+            f"  Medium IC [0.5-{threshold:.2f}]: {len(medium_ic_idxs)} paths get 0.25",
+            f"  Low IC (<0.5): {len(low_ic_idxs)} paths get 0.1",
         ]
         for s in lines:
             print(s)
@@ -603,8 +446,8 @@ class Episode(object):
             out[idx] = 0.25  # Decent reward for medium paths (increased from 0.20)
             self.agentic_scores[idx] = 0.25
             self.reward_kind[idx] = 'medium_fixed'
-        
-     
+
+
         # Score high-IC paths with LLM
         llm_rewards=[]
         if high_ic_idxs:
@@ -612,38 +455,33 @@ class Episode(object):
             if scores_list is None:
                 # If API fails, give high-IC paths a default
                 for idx in high_ic_idxs:
-                    out[idx] = 0.30               
-                    self.agentic_scores[idx] = 0.30  
+                    out[idx] = 0.30
+                    self.agentic_scores[idx] = 0.30
                     self.reward_kind[idx] = 'high_default'
-                    
+
             else:
                 # Process LLM scores
                 for idx, scores in zip(high_ic_idxs, scores_list):
                     sv = float(scores["validity"])
                     comp_raw = float(scores["completeness"])
                     rel = float(scores["relevance"])
-                    
-                    # Print raw LLM scores
-                    #print(f"  Path {idx}: V={sv:.1f}, C={comp_raw:.1f}, R={rel:.1f}", end="")
-                    
+
                     comp_conv = COMPLETENESS_MAP[int(comp_raw)]
                     raw = wV * sv + wC * comp_conv + wR * rel
-                    
+
                     final_norm = (raw - 1.0) / 4.0
                     final_norm = float(max(0.0, min(1.0, final_norm)))
-                    
-                    #print(f" → reward={final_norm:.3f}")
-                    
+
                     out[idx] = final_norm
-                    self.agentic_scores[idx] = final_norm     
-                    self.reward_kind[idx] = 'llm'   
-                
+                    self.agentic_scores[idx] = final_norm
+                    self.reward_kind[idx] = 'llm'
+
                     # Store the individual dimensions for LLM-scored paths
                     self.llm_dimensions[idx] = {
                         'validity': sv,
                         'completeness_conv': comp_conv,
                         'relevance': rel,
-                        'ic_mean': float(self.ic_mean[idx])   
+                        'ic_mean': float(self.ic_mean[idx])
 
                     }
 
@@ -651,23 +489,19 @@ class Episode(object):
 
                 # Summary statistics
                 if llm_rewards:
-                    # print(f"  LLM rewards: min={min(llm_rewards):.3f}, "
-                    #     f"avg={np.mean(llm_rewards):.3f}, max={max(llm_rewards):.3f}")
                     s = (f"  LLM rewards: min={min(llm_rewards):.3f}, "
                         f"avg={np.mean(llm_rewards):.3f}, max={max(llm_rewards):.3f}")
                     print(s)
                     _env_logger.info(s)
-        
+
         # Summary of all rewards
         positive_rewards = out[out > 0]
         if len(positive_rewards) > 0:
-            # print(f"[TOTAL] {len(positive_rewards)} paths rewarded "
-            #     f"(avg={np.mean(positive_rewards):.3f})")
             s = (f"[TOTAL] {len(positive_rewards)} paths rewarded "
             f"(avg={np.mean(positive_rewards):.3f})")
             print(s)
             _env_logger.info(s)
-        
+
         # --- bonus: machine-friendly JSON line for analysis (JSONL) ---
         try:
             _env_logger.info("METRICS " + json.dumps({
@@ -704,7 +538,7 @@ class Episode(object):
         # 1) CONVERT THE LIST OF WEIGHT VECTORS INTO A 2D ARRAY: [TIME, BATCH]
         weights_array = np.array(self.weight_history)  # SHAPE (T, B), WHERE T = # STEPS
 
-        # 2) MAKE A MASK FOR THE PADDING (WHERE WE HAVE 2.0) 
+        # 2) MAKE A MASK FOR THE PADDING (WHERE WE HAVE 2.0)
         #    'True' => IT IS PADDING, 'False' => REAL WEIGHT
         mask_2 = (weights_array == 2.0)
 
@@ -721,7 +555,7 @@ class Episode(object):
         #    IF SIZE >= 3 => 0.5 (PENALIZE)
         #    ELSE         => 1 (KEEP REWARD)
         punish_size = np.where(size >= 3, 0.5, 1)
-    
+
         # 7) BUILD THE REWARD BASED ON SUCCESS
         success_mask = (self.current_entities == self.end_entities)
 
@@ -729,7 +563,7 @@ class Episode(object):
 
         if self.weighted_reward==True and self.sigmoid==False:
             positive_part = self.positive_reward * average_ic
-            
+
         else:
             positive_part = self.positive_reward
 
@@ -750,7 +584,7 @@ class Episode(object):
         reward = (self.current_entities == self.end_entities)
 
         #calculate the average of the edge weights
-        average_ic = np.mean(self.weight_history, axis=0) 
+        average_ic = np.mean(self.weight_history, axis=0)
 
         if self.weighted_reward:
             #simple multiplication of the positive reward with the average of the edge weights
@@ -759,13 +593,13 @@ class Episode(object):
         else:
             positive_reward = self.positive_reward
 
-        
+
         # set the True and False values to the values of positive and negative rewards.
         condlist = [reward == True, reward == False]
         choicelist = [positive_reward, self.negative_reward]
-        reward = np.select(condlist, choicelist)  
+        reward = np.select(condlist, choicelist)
 
-        # print if positive reward is given 
+        # print if positive reward is given
         if np.any(reward == self.positive_reward):
             print("Positive reward was given")
 
@@ -784,25 +618,25 @@ class Episode(object):
             # --- NEW
             #track chosen relations for each step
             chosen_rels = self.state['next_relations'][np.arange(bsz), action]
-            
+
             # GET THE CHOSEN WEIGHTS
             chosen_weights = self.state['weights'][np.arange(bsz), action]
 
             # ANY ROLLOUT THAT REACHES THE END_ENTITY => done_mask = TRUE
             newly_done = (chosen_ents == self.end_entities)
             prev_done  = self.done_mask.copy()
-        
+
             # PAD ONLY ROLLOUTS THAT WERE ALREADY DONE BEFORE THIS STEP
             chosen_weights[prev_done] = 2.0
-            chosen_rels[prev_done]    = 2.0 #-- NEW 
+            chosen_rels[prev_done]    = 2.0 #-- NEW
 
             # APPEND REAL WEIGHT FOR THE LAST HOP OF NEWLY COMPLETED ROLLOUTS
             self.weight_history.append(chosen_weights)
-            self.relation_history.append(chosen_rels) #-- NEW 
+            self.relation_history.append(chosen_rels) #-- NEW
 
             # MARK NEW COMPLETION AS DONE FOR FUTURE STEPS
             self.done_mask = np.logical_or(self.done_mask, newly_done)
-     
+
             # UPDATE VISITED ENTITIES
             new_visited = np.zeros((bsz, self.visited_entities.shape[1] + 1), dtype=np.int32)
             for i in range(bsz):
@@ -818,12 +652,12 @@ class Episode(object):
                 self.end_entities,
                 self.all_answers,
                 (self.current_hop == self.path_len - 1),
-                self.num_rollouts, 
+                self.num_rollouts,
                 self.visited_entities, # Pass the visited entities list
                 self.prevent_cycles
 
             )
-     
+
             # UPDATE STATE
             self.state['next_relations']  = next_actions[:, :, 1]
             self.state['next_entities']   = next_actions[:, :, 0]
@@ -831,7 +665,7 @@ class Episode(object):
             self.state['weights'] = next_weights
 
             return self.state
-            
+
 
         else:
             self.current_hop += 1
@@ -851,7 +685,7 @@ class Episode(object):
             for i in range(bsz):
                 new_visited[i, :self.visited_entities.shape[1]] = self.visited_entities[i]
                 new_visited[i, self.visited_entities.shape[1]] = self.current_entities[i]
-                    
+
             self.visited_entities = new_visited
 
             next_actions, next_weights = self.grapher.return_next_actions(self.current_entities, self.start_entities, self.query_relation,
@@ -869,8 +703,8 @@ class Episode(object):
 
 class env(object):
     def __init__(self, params, mode='train'):
-        self.persona_path = params['persona_path'] # NEW 
-        self.agentic_ai_enabled = params['agentic_ai_enabled'] # NEW 
+        self.persona_path = params['persona_path'] # NEW
+        self.agentic_ai_enabled = params['agentic_ai_enabled'] # NEW
         self.weighted_reward = params['weighted_reward']
         self.adjust_factor = params['IC_importance']
         self.sigmoid = params['sigmoid']
