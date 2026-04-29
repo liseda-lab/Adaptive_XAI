@@ -1,4 +1,4 @@
-# Perspective-XAI
+# Adaptive-XAI
 
 **Agentic Personas for Adaptive Scientific Explanations with Knowledge Graphs**  
 
