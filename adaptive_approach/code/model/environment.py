@@ -71,11 +71,10 @@ def _persona_hash(text):
     return _persona_hash_cache[text]
 
 def threshold_for_step(step: int) -> float:
-    if step < 60:    return 0.60
-    elif step < 80:  return 0.65
-    elif step < 100: return 0.70
-    else:            return 0.75
-
+    if step < 60:    return 0.50
+    elif step < 80:  return 0.55
+    elif step < 100: return 0.60
+    else:            return 0.65
 
 class Episode(object):
     _training_step = 0  # Current training step/iteration
@@ -470,7 +469,7 @@ class Episode(object):
         # Fidelity=0 paths (base <= 0) get NO reward.
         high_ic_idxs = np.where(base > threshold)[0].tolist()
         medium_ic_idxs = np.where((base >= 0.5) & (base <= threshold))[0].tolist() if threshold >= 0.5 else []
-        low_ic_idxs = np.where((base > 0.3) & (base < 0.5))[0].tolist()  
+        low_ic_idxs = np.where((base > 0) & (base < 0.5))[0].tolist()  
 
         lines = [
             f"[STEP {training_step}] Threshold={threshold:.2f}",
