@@ -611,9 +611,14 @@ class Trainer(object):
                 self.entity_trajectory.append(
                     state['current_entities'])
 
-            # Process final rewards from environment
+            # Process final rewards from environment.
+            # HITS@k/MRR only checks reward > 0 (fidelity); the LLM blend
+            # value never enters the metric. So at test we skip the LLM here
+            # (metric_only=True keeps the same sign for the >0 check) and
+            # call the LLM separately on the JSON-bound paths after
+            # trim_and_rank_batch (per-b loop below).
             if print_paths:
-                rewards = episode.get_reward_agenticAI()
+                rewards = episode.get_reward_agenticAI(metric_only=True)
             else:
                 rewards = episode.get_reward_ic_based()
             #print(rewards)
@@ -624,6 +629,32 @@ class Trainer(object):
             AP = 0.0
             ce = episode.state['current_entities'].reshape((temp_batch_size, self.test_rollouts))
             se = episode.start_entities.reshape((temp_batch_size, self.test_rollouts))
+
+            # Pre-compute trimmed paths once per beam batch (was per-b before).
+            # Then batch the LLM call across all queries' high-IC paths so
+            # get_scores_AgenticAI can pack chunks of BATCH_SIZE more efficiently.
+            if print_paths:
+                trimmed = trim_and_rank_batch(
+                    entity_traj   = self.entity_trajectory,
+                    relation_traj = self.relation_trajectory,
+                    log_probs     = self.log_probs,
+                    end_entities  = episode.end_entities,
+                    batch_size    = temp_batch_size,
+                    K             = self.test_rollouts
+                )
+
+                # One LLM call (chunked) over the union of all queries'
+                # high-IC correct paths. Skip with --no_llm_rerank=1.
+                if getattr(self, 'agentic_ai_enabled', False) and not int(getattr(self, 'no_llm_rerank', 0)):
+                    indices_to_score = []
+                    for b in range(temp_batch_size):
+                        for p in trimmed[b]:
+                            r = p['rollout_idx']
+                            indx = b * self.test_rollouts + r
+                            if rewards[indx] > 0 and episode.reward_kind[indx] == 'high_ic':
+                                indices_to_score.append(indx)
+                    if indices_to_score:
+                        episode.score_paths_for_json(indices_to_score)
 
             # Compute HITS@k
             for b in range(temp_batch_size):
@@ -677,14 +708,7 @@ class Trainer(object):
                     end_e = self.rev_entity_vocab[episode.end_entities[b * self.test_rollouts]]
                     paths[str(qr)].append(str(start_e) + "\t" + str(end_e) + "\n")
                     paths[str(qr)].append("Reward:" + str(1 if answer_pos != None and answer_pos < 10 else 0) + "\n")
-                    trimmed = trim_and_rank_batch(
-                    entity_traj   = self.entity_trajectory,
-                    relation_traj = self.relation_trajectory,
-                    log_probs     = self.log_probs,
-                    end_entities  = episode.end_entities,
-                    batch_size    = temp_batch_size,
-                    K              = self.test_rollouts
-                )
+                    # trimmed[] computed once before this loop (above)
                     # for p in trimmed[b]:
                     #     # use the rollout index to recover reward & beam-score
                     #     r = p['rollout_idx']
