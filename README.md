@@ -2,10 +2,10 @@
 
 **Agentic Personas for Adaptive Scientific Explanations with Knowledge Graphs**  
 
-> ### ⚠️ For new experiments, use the PyTorch implementation
+> ### For new experiments, use the PyTorch implementation
 > A maintained PyTorch implementation lives at **[liseda-lab/REx_PyTorch](https://github.com/liseda-lab/REx_PyTorch)**. It is significantly faster, supports both OpenAI and local LLMs (e.g. Qwen3.5-9B for training, Qwen3-4B for scoring), produces a clean per-pair JSON of correct paths with lowest common ancestors, and adds a **decoupled rerank pipeline** (`--no_llm_rerank` + `--external_rerank`) for slow datasets like oregano DTI where per-batch LLM calls during test would otherwise dominate runtime.
 >
-> **This TensorFlow repository is preserved for reproducibility of the paper's reported numbers. New work should use the PyTorch implementation.**
+> **This TensorFlow repository is preserved for paper's reproducibility. New work should use the PyTorch implementation.**
 
 ## Overview
 This repository accompanies our paper, which presents **adaptive explainability**: an approach to designing AI explanations that adapt to experts’ epistemic stances. 
