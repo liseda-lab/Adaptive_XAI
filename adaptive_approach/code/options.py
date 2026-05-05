@@ -53,6 +53,8 @@ def read_options():
                         help="Enable Agentic AI persona-shaped scoring (1 = on, 0 = off)")
     parser.add_argument("--persona_path", default="", type=str,
                         help="Path to persona text file for Agentic AI")
+    parser.add_argument("--no_llm_rerank", default=0, type=int,
+                        help="Skip per-batch LLM scoring during test() so the test loop runs at neutral pace. paths.json is written with final_score = ic_mean (no LLM blend). Useful for slow runs (e.g. oregano DTI) where you want metrics quickly without paying per-batch GPT-4o-mini calls. (1 = on, 0 = off)")
 
     
     try:
@@ -70,7 +72,8 @@ def read_options():
     parsed['sigmoid'] = (parsed['sigmoid'] == 1)
     parsed['size_flexibility'] = (parsed['size_flexibility'] == 1)
     parsed['prevent_cycles'] = (parsed['prevent_cycles'] == 1)
-    parsed['agentic_ai_enabled'] = (parsed['agentic_ai_enabled'] == 1) # NEW 
+    parsed['agentic_ai_enabled'] = (parsed['agentic_ai_enabled'] == 1) # NEW
+    parsed['no_llm_rerank'] = (parsed['no_llm_rerank'] == 1)
 
 
 

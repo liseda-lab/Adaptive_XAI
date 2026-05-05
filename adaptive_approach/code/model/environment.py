@@ -57,19 +57,6 @@ def configure_env_logger(path):
 # Completeness is best at 3; triangular mapping back to a 1–5 scale
 COMPLETENESS_MAP = {1: 1.0, 2: 3.0, 3: 5.0, 4: 3.0, 5: 1.0}
 
-# Module-level LLM score cache. Keyed by (persona_hash, query_context, path).
-# At temperature=0 the LLM is deterministic, so cached scores are byte-identical
-# to what a re-call would produce. Persists across episodes within one process.
-_llm_score_cache = {}
-_persona_hash_cache = {}
-_llm_cache_stats = {"hits": 0, "misses": 0}
-
-def _persona_hash(text):
-    if text not in _persona_hash_cache:
-        import hashlib
-        _persona_hash_cache[text] = hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
-    return _persona_hash_cache[text]
-
 def threshold_for_step(step: int) -> float:
     if step < 60:    return 0.50
     elif step < 80:  return 0.55
@@ -287,46 +274,16 @@ class Episode(object):
 
         import time, random, json
 
-        def _build_cache_key(idx):
-            """Cache key includes persona + query context + path content.
-            Same path under same query+persona returns identical LLM score (temp=0)."""
-            ctx = (
-                int(self.start_entities[idx]),
-                int(self.end_entities[idx]),
-                int(self.query_relation[idx]),
-            )
-            visited = tuple(int(x) for x in self.visited_entities[idx])
-            rels = tuple(
-                int(self.relation_history[t][idx])
-                for t in range(len(self.relation_history))
-            )
-            return (_persona_hash(self.persona_text), ctx, visited, rels)
-
         def _score_batch(batch_idxs, start_num):
             """One sync call with small retries + robust JSON extraction.
-            Skips paths whose (persona, query, path) key is already in _llm_score_cache."""
-            # ---- Cache lookup ----
-            keys = {idx: _build_cache_key(idx) for idx in batch_idxs}
-            cached = {idx: _llm_score_cache[keys[idx]]
-                      for idx in batch_idxs if keys[idx] in _llm_score_cache}
-            to_score = [idx for idx in batch_idxs if idx not in cached]
-
-            _llm_cache_stats["hits"] += len(cached)
-            _llm_cache_stats["misses"] += len(to_score)
-            if cached:
-                print(f"[CACHE] {len(cached)}/{len(batch_idxs)} paths from cache "
-                      f"(total hits={_llm_cache_stats['hits']}, misses={_llm_cache_stats['misses']})")
-
-            if not to_score:
-                return [cached[idx] for idx in batch_idxs]
-
-            paths_text = self._build_paths_text(keep_idxs=to_score)
+            Always scores all paths (no caching) so behavior matches the paper."""
+            paths_text = self._build_paths_text(keep_idxs=batch_idxs)
 
             n_lines = sum(1 for line in paths_text.splitlines() if line.startswith("Path "))
-            if n_lines != len(to_score):
-                print(f"[WARN] Prompt contains {n_lines} Path-lines but batch size is {len(to_score)}")
+            if n_lines != len(batch_idxs):
+                print(f"[WARN] Prompt contains {n_lines} Path-lines but batch size is {len(batch_idxs)}")
 
-            id_list = list(map(int, to_score))
+            id_list = list(map(int, batch_idxs))
 
             prompt = f"""
             You are evaluating drug–disease explanation paths from the perspective of the following persona:
@@ -338,10 +295,10 @@ class Episode(object):
             2. Completeness (C): 1–5 where 3 is ideal. 1 = too simple, 5 = too complex. Reward paths that are sufficiently detailed without overload.
             3. Relevance (R): 1–5. Usefulness for understanding why the prediction matters and how it connects to the task.
 
-            Paths to evaluate ({len(to_score)} total). Each line has an [id=...]:
+            Paths to evaluate ({len(batch_idxs)} total). Each line has an [id=...]:
                 {paths_text}
 
-            Return ONLY valid JSON with an array of exactly {len(to_score)} objects.
+            Return ONLY valid JSON with an array of exactly {len(batch_idxs)} objects.
             Each object MUST be: {{"id": <int from {id_list}>, "validity": <int>, "completeness": <int>, "relevance": <int>}}.
             Use ONLY the ids from this set: {id_list}. Do not invent or omit ids. DOUBLE CHECK BEFORE RETURNING RESULTS.
             """.strip()
@@ -396,7 +353,7 @@ class Episode(object):
                                 "relevance":    clamp1to5(item.get("relevance", 3)),
                             }
 
-                    # Now assemble output strictly in to_score order, filling defaults when missing
+                    # Assemble output in batch_idxs order, filling defaults when missing
                     new_scores, missing = [], 0
                     for pid in id_list:
                         if pid in by_id:
@@ -409,14 +366,7 @@ class Episode(object):
                         print(f"[WARN] ID-mismatch: expected {len(id_list)}, got {len(by_id)}, "
                             f"filled defaults for {missing} ids")
 
-                    # Cache the new scores
-                    for to_idx, score in zip(to_score, new_scores):
-                        _llm_score_cache[keys[to_idx]] = score
-
-                    # Merge cached + new in original batch order
-                    score_by_idx = dict(zip(to_score, new_scores))
-                    return [cached[idx] if idx in cached else score_by_idx[idx]
-                            for idx in batch_idxs]
+                    return new_scores
 
                 except Exception as e:
                     last_err = e
@@ -424,11 +374,10 @@ class Episode(object):
                         delay = SLEEP_BETWEEN * (1.25 ** (attempt - 1)) + random.uniform(0, 0.2)
                         time.sleep(delay)
 
-            # Only reached if all retries failed: defaults for uncached, cache for cached
+            # Only reached if all retries failed
             print(f"[FAIL] Batch completely failed after {MAX_RETRIES} attempts: {last_err}")
             default_score = {"validity": 3.0, "completeness": 2.0, "relevance": 3.0}
-            return [cached[idx] if idx in cached else default_score
-                    for idx in batch_idxs]
+            return [default_score for _ in batch_idxs]
 
         # ---- group by example id so each prompt has a single (start,end) context ----
         groups = defaultdict(list)

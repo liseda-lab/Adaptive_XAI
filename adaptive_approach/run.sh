@@ -18,7 +18,8 @@ cmd="python code/model/trainer.py --base_output_dir $base_output_dir \
     --size_flexibility $size_flexibility \
     --tensorboard_dir $tensorboard_dir \
     --agentic_ai_enabled $agentic_ai_enabled \
-    --persona_path $persona_path"
+    --persona_path $persona_path \
+    --no_llm_rerank ${no_llm_rerank:-0}"
 
 echo "Executing $cmd"
 
