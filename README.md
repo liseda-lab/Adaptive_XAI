@@ -2,7 +2,10 @@
 
 **Agentic Personas for Adaptive Scientific Explanations with Knowledge Graphs**  
 
-- *UPDATE*: A PyTorch implementation is available [here](https://github.com/liseda-lab/REx_PyTorch). It is a more efficient implementation of the approach described in the paper, with some improvements, including a final output file with only correct paths and associated lowest common ancestors. The original implementation is still available in this repo for reproducibility purposes.
+> ### ⚠️ For new experiments, use the PyTorch implementation
+> A maintained PyTorch implementation lives at **[liseda-lab/REx_PyTorch](https://github.com/liseda-lab/REx_PyTorch)**. It is significantly faster, supports both OpenAI and local LLMs (e.g. Qwen3.5-9B for training, Qwen3-4B for scoring), produces a clean per-pair JSON of correct paths with lowest common ancestors, and adds a **decoupled rerank pipeline** (`--no_llm_rerank` + `--external_rerank`) for slow datasets like oregano DTI where per-batch LLM calls during test would otherwise dominate runtime.
+>
+> **This TensorFlow repository is preserved for reproducibility of the paper's reported numbers. New work should use the PyTorch implementation.**
 
 ## Overview
 This repository accompanies our paper, which presents **adaptive explainability**: an approach to designing AI explanations that adapt to experts’ epistemic stances. 
@@ -100,7 +103,13 @@ Once inside the container, to run it, you will need to run the following command
 uv run bash run.sh configs/{dataset}
 ```
 
-Where `{dataset}` is the name of the dataset you would like to run the approach on. 
+Where `{dataset}` is the name of the dataset you would like to run the approach on.
+
+### Skipping LLM scoring during test (for slow runs)
+
+For slow runs — particularly **oregano DTI**, where the test set is large and per-batch GPT-4o-mini calls dominate wall time — set `no_llm_rerank=1` in the dataset config to skip in-loop LLM scoring during `test()`. The test loop then runs at neutral pace (no API calls) and `paths.json` is written with `final_score = ic_mean`. You still get all the standard metrics (Hits@k, MRR), you just don't get the persona-shaped LLM blend.
+
+This repo does **not** ship a post-hoc reranker. If you want the full agentic pipeline (fast test + a separate batched rerank pass with a possibly lighter LLM and a data-driven failure fallback), use the PyTorch implementation referenced at the top of this README — that's where the `--external_rerank` mode lives. 
 
 ## Datasets 
 Datasets should have the following files:
